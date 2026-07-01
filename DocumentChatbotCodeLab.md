@@ -178,11 +178,27 @@ retriever_model, tokenizer, reader_model = load_pytorch_models()
 
 ### Explanation
 This function loads every PDF, splits them into smaller overlapping chunks, and converts each chunk into a numerical embedding. These embeddings are later compared with the user's question to find the most relevant document sections.
-
+The user's question is converted into an embedding. Cosine similarity compares this embedding with all document embeddings, and the top three most relevant chunks are selected as context for question answering.
 ```python
 @st.cache_resource(show_spinner="Vectorizing local PDFs")
 def process_documents():
-    ...
+    loader = PyPDFDirectoryLoader(DATA_DIR)
+    docs = loader.load()
+
+    if not docs:
+        return None, None
+
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+    splits = text_splitter.split_documents(docs)
+    texts = [doc.page_content for doc in splits]
+
+    with torch.no_grad():
+        embeddings = retriever_model.encode(texts, convert_to_tensor=True)
+
+    return texts, embeddings
+
+
+texts, doc_embeddings = process_documents()
 ```
 
 ## Step 8. Build the Sidebar
@@ -192,7 +208,15 @@ The sidebar lists every PDF found in the `data` directory. This allows users to 
 
 ```python
 with st.sidebar:
-    ...
+    st.header("File(s) in `/data`")
+    pdf_files = [f for f in os.listdir(DATA_DIR) if f.endswith('.pdf')]
+    if pdf_files:
+        st.success(f"Cached {len(pdf_files)} PDF file(s).")
+        for file in pdf_files:
+            st.markdown(f"- `{file}`")
+    else:
+        st.warning("No PDFs found! Drop your PDFs in the `/data` directory to start.")
+
 ```
 
 ## Step 9. Build the Chat Interface
@@ -202,13 +226,17 @@ This section initializes the chat history using Streamlit's session state and re
 
 ```python
 if "messages" not in st.session_state:
-    ...
+    st.session_state.messages = []
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 ```
 
 ## Step 10. Retrieve Relevant Chunks
 
 ### Explanation
-The user's question is converted into an embedding. Cosine similarity compares this embedding with all document embeddings, and the top three most relevant chunks are selected as context for question answering.
+
 
 ```python
 with torch.no_grad():
@@ -241,12 +269,58 @@ This final section combines all the previous steps into a working chatbot. It ac
 
 ```python
 # Complete chat loop from the application
-...
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+if texts is None:
+    st.info("Please add PDF documents to your local `data/` directory and refresh the app.")
+else:
+    if user_query := st.chat_input("Ask a factual question about your documents..."):
+
+        with st.chat_message("user"):
+            st.markdown(user_query)
+        st.session_state.messages.append({"role": "user", "content": user_query})
+
+        with st.chat_message("assistant"):
+            with st.spinner("Searching and parsing result chunks"):
+
+                with torch.no_grad():
+                    query_embedding = retriever_model.encode(user_query, convert_to_tensor=True)
+                    cos_scores = util.cos_sim(query_embedding, doc_embeddings)[0]
+                    top_results = torch.topk(cos_scores, k=min(3, len(texts)))
+
+                context_chunks = [texts[idx] for idx in top_results.indices.tolist()]
+                combined_context = "\n\n".join(context_chunks)
+
+                inputs = tokenizer(
+                    user_query,
+                    combined_context,
+                    return_tensors="pt",
+                    truncation=True,
+                    max_length=512
+                )
+
+                with torch.no_grad():
+                    outputs = reader_model(**inputs)
+
+                start_idx = torch.argmax(outputs.start_logits)
+                end_idx = torch.argmax(outputs.end_logits)
+
+                answer_tokens = inputs.input_ids[0][start_idx: end_idx + 1]
+                extracted_string = tokenizer.decode(answer_tokens, skip_special_tokens=True)
+
+                if extracted_string.strip() and start_idx < end_idx:
+                    answer = f"**Answer extracted from source:** \n> {extracted_string.strip()}"
+                else:
+                    answer = "I couldn't locate a definitive answer snippet matching your query inside the context document blocks."
+
+                st.markdown(answer)
+
+        st.session_state.messages.append({"role": "assistant", "content": answer})
 ```
 
 ## Step 14. Run the Application
-
-### Explanation
 Start the Streamlit development server using the following command. Open the local URL displayed in the terminal, place your PDF documents into the `data` folder, refresh the application, and begin asking questions.
 
 ```bash
