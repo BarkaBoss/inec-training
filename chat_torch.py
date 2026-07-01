@@ -7,7 +7,6 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from transformers import AutoTokenizer, AutoModelForQuestionAnswering
 from sentence_transformers import SentenceTransformer, util
 
-# 1. Page Configuration
 st.set_page_config(page_title="Torch Chatbot", page_icon="", layout="wide")
 st.title("Chat with a document")
 st.write("Scan and extract answers from local PDFs.")
