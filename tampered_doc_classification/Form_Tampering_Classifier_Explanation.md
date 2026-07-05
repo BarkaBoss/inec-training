@@ -1,5 +1,7 @@
 # Form Tampering Classifier (PyTorch + Streamlit)
 
+<img src="screenshots/Screenshot%202026-07-05%20at%2020.51.25.png">
+<img src="screenshots/Screenshot%202026-07-05%20at%2020.51.45.png">
 This guide explains the code section by section. Each section includes a
 **copy-and-paste** code block.
 
