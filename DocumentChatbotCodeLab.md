@@ -337,3 +337,8 @@ You have built a Retrieval + Reader document question-answering application usin
 - Sentence Transformers
 - Hugging Face BERT QA
 - PyTorch
+
+### Exercise
+- Add a new PDF file to the `data` folder.
+- Ask a question about the new PDF.
+- Refresh the page and ask a new question.
